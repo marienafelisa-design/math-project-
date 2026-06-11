@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Integration Calculator</title>
+    <!-- Loading math.js for safe mathematical string parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f7fb;
+            color: #333;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        h2 {
+            margin-top: 0;
+            color: #1a1a1a;
+            text-align: center;
+        }
+        canvas {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #fafafa;
+            display: block;
+        }
+        .controls {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+        @media(min-width: 600px) {
+            .controls {
+                grid-template-columns: 2fr 1fr 1fr;
+            }
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        input {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        input:focus {
+            outline: none;
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 3px rgba(74,144,226,0.2);
+        }
+        .output-box {
+            grid-column: 1 / -1;
+            background: #f0f7ff;
+            border: 1px solid #d0e4ff;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 1.3rem;
+            font-weight: 500;
+        }
+        .math-text {
+            font-family: "Times New Roman", Times, serif;
+            font-style: italic;
+        }
+        .error {
+            color: #d9534f;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Definite Integral Visualizer</h2>
+    <canvas id="plotCanvas"></canvas>
+    
+    <div class="controls">
+        <div class="input-group">
+            <label for="fx">Function f(x)</label>
+            <input type="text" id="fx" value="x^2 - 1">
+            <div id="errorMsg" class="error"></div>
+        </div>
+        
+        <div class="input-group">
+            <label for="boundA">Lower Bound (a)</label>
+            <input type="number" id="boundA" value="0" step="0.1">
+        </div>
+        
+        <div class="input-group">
+            <label for="boundB">Upper Bound (b)</label>
+            <input type="number" id="boundB" value="2" step="0.1">
+        </div>
+        
+        <div class="output-box">
+            <span class="math-text">∫<sub>a</sub><sup>b</sup> f(x) dx = </span>
+            <span id="resultValue">0.0000</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('plotCanvas');
+    const ctx = canvas.getContext('2d');
+    const fxInput = document.getElementById('fx');
+    const boundAInput = document.getElementById('boundA');
+    const boundBInput = document.getElementById('boundB');
+    const resultDisplay = document.getElementById('resultValue');
+    const errorDisplay = document.getElementById('errorMsg');
+
+    // Handle high DPI displays
+    function setupCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+    }
+
+    // Coordinate conversion variables (-5 to 5 view windows default)
+    const xMin = -5, xMax = 5;
+    const yMin = -3, yMax = 7;
+
+    function toScreenX(x, width) {
+        return ((x - xMin) / (xMax - xMin)) * width;
+    }
+
+    function toScreenY(y, height) {
+        return height - ((y - yMin) / (yMax - yMin)) * height;
+    }
+
+    // Numerical integration via Simpson's Rule
+    function integrate(f, a, b, n = 200) {
+        if (a === b) return 0;
+        const h = (b - a) / n;
+        let sum = f(a) + f(b);
+
+        for (let i = 1; i < n; i++) {
+            const x = a + i * h;
+            sum += (i % 2 === 0 ? 2 : 4) * f(x);
+        }
+        return (h / 3) * sum;
+    }
+
+    function update() {
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+        errorDisplay.textContent = "";
+
+        // Safely parse function using math.js
+        let f;
+        try {
+            const compiled = math.compile(fxInput.value);
+            f = (x) => compiled.evaluate({ x: x });
+            // Test evaluation to trigger errors early if syntax is broken
+            f(1); 
+        } catch (e) {
+            errorDisplay.textContent = "Invalid function syntax";
+            resultDisplay.textContent = "—";
+            return;
+        }
+
+        const a = parseFloat(boundAInput.value) || 0;
+        const b = parseFloat(boundBInput.value) || 0;
+
+        // Calculate result
+        const integralValue = integrate(f, a, b);
+        resultDisplay.textContent = integralValue.toFixed(4);
+
+        // Draw grid lines
+        ctx.strokeStyle = '#e8e8e8';
+        ctx.lineWidth = 1;
+        for(let x = Math.ceil(xMin); x <= Math.floor(xMax); x++) {
+            ctx.beginPath();
+            ctx.moveTo(toScreenX(x, width), 0);
+            ctx.lineTo(toScreenX(x, width), height);
+            ctx.stroke();
+        }
+        for(let y = Math.ceil(yMin); y <= Math.floor(yMax); y++) {
+            ctx.beginPath();
+            ctx.moveTo(0, toScreenY(y, height));
+            ctx.lineTo(width, toScreenY(y, height));
+            ctx.stroke();
+        }
+
+        // Draw Axes
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1.5;
+        // X-Axis
+        ctx.beginPath();
+        ctx.moveTo(0, toScreenY(0, height));
+        ctx.lineTo(width, toScreenY(0, height));
+        ctx.stroke();
+        // Y-Axis
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(0, width), 0);
+        ctx.lineTo(toScreenX(0, width), height);
+        ctx.stroke();
+
+        // Draw shaded area under the curve
+        const step = (b - a) / 300;
+        if (a !== b && !isNaN(step)) {
+            ctx.fillStyle = 'rgba(74, 144, 226, 0.25)';
+            ctx.beginPath();
+            ctx.moveTo(toScreenX(a, width), toScreenY(0, height));
+            
+            for (let x = a; step > 0 ? x <= b : x >= b; x += step) {
+                try {
+                    let y = f(x);
+                    if(!isNaN(y) && isFinite(y)) {
+                        ctx.lineTo(toScreenX(x, width), toScreenY(y, height));
+                    }
+                } catch(err) {}
+            }
+            ctx.lineTo(toScreenX(b, width), toScreenY(0, height));
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Draw the main function curve
+        ctx.strokeStyle = '#4a90e2';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        let first = true;
+        const graphStep = (xMax - xMin) / width;
+        
+        for(let x = xMin; x <= xMax; x += graphStep) {
+            try {
+                let y = f(x);
+                if(!isNaN(y) && isFinite(y)) {
+                    if (first) {
+                        ctx.moveTo(toScreenX(x, width), toScreenY(y, height));
+                        first = false;
+                    } else {
+                        ctx.lineTo(toScreenX(x, width), toScreenY(y, height));
+                    }
+                } else {
+                    first = true; // Break line path for undefined territories
+                }
+            } catch(err) {
+                first = true;
+            }
+        }
+        ctx.stroke();
+    }
+
+    // Event hooks
+    window.addEventListener('resize', () => { setupCanvas(); update(); });
+    fxInput.addEventListener('input', update);
+    boundAInput.addEventListener('input', update);
+    boundBInput.addEventListener('input', update);
+
+    // Run setup on load
+    setupCanvas();
+    update();
+</script>
+
+</body>
+</html>
